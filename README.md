@@ -116,7 +116,9 @@ ls data/                                                    # openpipes.db(と�
    - `Node 22.13.0 or newer is required` で止まっていたら、**PteWorker の Node が古い**(§10 の筆頭)。
 7. `npx sorahost-cli open`(または `whoami` で出るサイト URL)でエディタを開き、Basic 認証で入る。
 8. 公開フィードは `<サイト URL>/pipes/<id>/run`。`?format=json` で JSON、`?format=jsonfeed` で JSON Feed。
-   これを RSS リーダーに登録する。
+   これを RSS リーダーに登録する。RSS の `<link>` と JSON Feed の `home_page_url` / `feed_url` には
+   `OPENPIPES_BASE_URL` がそのまま入る(手元で確認済み)。ここに意図しないホスト名が出ていたら
+   `OPENPIPES_BASE_URL` の設定漏れなので、`.env` を直して再起動する。
 
 CI から行う場合は `SORAHOST_ENDPOINT` / `SORAHOST_TOKEN` を Secrets に入れ、`npx sorahost-cli deploy --yes --json`。
 `.env` はデプロイと無関係に PteWorker 側に置いたままでよい(CLI は `.env` を送らないので上書きされない)。
@@ -143,8 +145,11 @@ node -e "new (require('node:sqlite').DatabaseSync)('/home/container/openpipes/op
 出来た `backup.db` をファイルマネージャか SFTP で手元に落とす。
 サーバーを止めてからコピーしてもよいが、その場合は `openpipes.db-wal` と `-shm` も一緒に落とすこと。
 
-> このワンライナーは OpenPipes 側で動作確認済みだが、**PteWorker のコンソールで実行できるかは未確認**(§10)。
-> コンソールで任意コマンドを打てない場合は、サーバーを止めて 3 ファイルをファイルマネージャでダウンロードする。
+> このワンライナーは**このリポジトリで動作確認済み**(2026-09-03、Node v24.19.0)。
+> サーバーを止めた状態でも、**動かしたまま**でも一貫したコピーが取れる(`VACUUM INTO` は WAL の内容も含めて書き出す)。
+> `node -e` は `"type": "module"` のディレクトリでも CommonJS として動くので、`require` のままでよい。
+> 残る未確認は **PteWorker のコンソールで任意のコマンドを打てるかどうか**だけ(§10)。
+> 打てない場合は、サーバーを止めて `openpipes.db` / `-wal` / `-shm` の 3 ファイルをファイルマネージャでダウンロードする。
 
 ## 6. 環境変数
 
@@ -257,7 +262,7 @@ git add package.json package-lock.json && git commit -m "Update sorahost-cli"
 | DB の置き場 `/home/container/openpipes/` | `.env` と同じく、再デプロイで消えない | 保存したパイプが再デプロイで消える。ファイルマネージャで再デプロイ前後を見比べ、残る場所へ `OPENPIPES_DB` を向ける。どこも残らないなら §5 のバックアップを取って手で戻す運用になる |
 | DB の親ディレクトリの作成 | OpenPipes が起動時に作る | 権限で失敗したら `logs` に出る。ファイルマネージャで作る |
 | `sqlite3` コマンド | PteWorker のコンテナには**無い** | あれば `sqlite3 <db> ".backup backup.db"` でもよい |
-| PteWorker コンソールで node ワンライナーが打てるか | 打てる | 打てなければサーバーを止めて `openpipes.db` / `-wal` / `-shm` をファイルマネージャで落とす |
+| PteWorker コンソールで node ワンライナーが打てるか | 打てる(**コマンド自体は手元で確認済み**。停止中でも稼働中でも取れる) | 打てなければサーバーを止めて `openpipes.db` / `-wal` / `-shm` をファイルマネージャで落とす |
 | SQLite の WAL とコンテナのファイルシステム | 通常のローカルディスクで WAL が動く | lock に失敗すると `logs` に出る。OpenPipes 側の `journal_mode` の話になるので issue にする |
 | サイト URL | `whoami` で出るサイト URL が固定で、ブラウザで使う URL と同じ(https) | URL が変わると `OPENPIPES_BASE_URL` の照合で保存が 403 になる。`.env` を直して再起動 |
 | ポートの環境変数 | `SERVER_PORT`。`PORT` が来たらそちらを優先して使う | どちらでもなければ `logs` で変数名を確認し、ランチャーで `process.env.PORT` に読み替える |

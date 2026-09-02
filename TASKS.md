@@ -923,6 +923,19 @@ push はしない(第 1 期と同じ。リモートは無く、ユーザーの�
 
 **受け入れ基準**: 上の 4 で保存したパイプが再デプロイ後も残る。結果(Node の版、残ったかどうか)を README の未確認事項の表に反映する。
 
+> **エージェント側の進捗(2026-09-03)**: 1〜4 は実機とデプロイトークンが要るので手を付けていない
+> (§8「本物のエンドポイントとトークンで `deploy` を実行するのはユーザー」。この作業環境には
+> `.sorahost.json` も `SORAHOST_*` も無く、`sorahost-cli` にコンソールを叩く手段も無い)。
+> **実機に依存しない 5 と 6 は手元で先に確かめてあり**、README に反映済み:
+> - 5: `OPENPIPES_BASE_URL=http://127.0.0.1:3123` で起動してパイプを保存すると、RSS の `<link>` も
+>   JSON Feed の `home_page_url` / `feed_url` もその origin になった。
+> - 6: README のワンライナーがそのまま動き、`pipes` / `sessions` / `users` を含むコピーが出来た。
+>   **サーバーを止めた状態でも稼働中でも**一貫したコピーが取れる(`VACUUM INTO` は WAL の内容も書き出す)。
+>   `node -e` は `"type": "module"` のディレクトリでも CommonJS なので `require` のままでよい。
+>
+> 残るのは**この作業環境では原理的に確かめられない 3 点**だけ: PteWorker の Node の版、
+> `/home/container/openpipes/` が再デプロイをまたぐか、コンソールで任意コマンドを打てるか。
+
 ### 9.6 受け入れ基準チェックリスト(第 2 期)
 
 - [x] `package-lock.json` の `openpipes` が `6aca055c4939a5c29146e3e131d45edb25aef36e` を指し、`engines.node` が `>=22.13.0`。
