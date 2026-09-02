@@ -1,0 +1,21 @@
+{
+  "name": "hello-pte-worker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OpenPipes on SORAHOST PteWorker, deployed with sorahost-cli",
+  "type": "module",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/launcher-test.js",
+    "deploy": "sorahost deploy",
+    "deploy:dry": "sorahost deploy --dry-run",
+    "update:openpipes": "npm update openpipes"
+  },
+  "dependencies": {
+    "openpipes": "github:takano32/OpenPipes#main"
+  },
+  "devDependencies": {
+    "sorahost-cli": "^1.3.1"
+  }
+}
