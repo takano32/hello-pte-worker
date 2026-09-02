@@ -135,21 +135,40 @@ CI から行う場合は `SORAHOST_ENDPOINT` / `SORAHOST_TOKEN` を Secrets に�
 
 ### バックアップ
 
-DB 1 ファイルを取っておけば済む。**稼働したままコピーすると WAL の途中を掴む**ので、次のどちらかにする。
+DB 1 ファイルを取っておけば済む。ただし **稼働したまま `openpipes.db` だけをコピーしてはいけない**
+(ファイルマネージャや SFTP で 1 ファイルだけ落とすのも同じ)。書き込みは WAL 側に溜まっているので、
+コピーは行が欠けるどころか **テーブルが 1 つも無いデータベース** になることがある(実測)。次のどちらかにする。
 
 ```sh
 # PteWorker のコンソールで(sqlite3 コマンドは無い前提。node ワンライナー)
-node -e "new (require('node:sqlite').DatabaseSync)('/home/container/openpipes/openpipes.db').exec(\"VACUUM INTO '/home/container/backup.db'\")"
+# 出力先は毎回別名にする(下の YYYY-MM-DD はその場で手で書き換える)
+node -e "new (require('node:sqlite').DatabaseSync)('/home/container/openpipes/openpipes.db').exec(\"VACUUM INTO '/home/container/openpipes-YYYY-MM-DD.db'\")"
 ```
 
-出来た `backup.db` をファイルマネージャか SFTP で手元に落とす。
-サーバーを止めてからコピーしてもよいが、その場合は `openpipes.db-wal` と `-shm` も一緒に落とすこと。
+**出力先が既にあると `output file already exists` で止まる**(実測)。2 回目のバックアップが失敗したら、
+DB の破損ではなくまず名前の重複を疑う。同じ名前を使うなら先に古いファイルを消す。
+
+出来たファイルをファイルマネージャか SFTP で手元に落とす。サーバーを止めてからコピーしてもよいが、
+その場合は `openpipes.db-wal` と `-shm` も一緒に落とすこと。
 
 > このワンライナーは**このリポジトリで動作確認済み**(2026-09-03、Node v24.19.0)。
 > サーバーを止めた状態でも、**動かしたまま**でも一貫したコピーが取れる(`VACUUM INTO` は WAL の内容も含めて書き出す)。
 > `node -e` は `"type": "module"` のディレクトリでも CommonJS として動くので、`require` のままでよい。
 > 残る未確認は **PteWorker のコンソールで任意のコマンドを打てるかどうか**だけ(§10)。
 > 打てない場合は、サーバーを止めて `openpipes.db` / `-wal` / `-shm` の 3 ファイルをファイルマネージャでダウンロードする。
+
+**戻せることを一度確かめておく。** 落としてきたバックアップは手元でそのまま開いて中身を見られる
+(環境変数はファイルより優先されるので `.env` の `OPENPIPES_DB` は無視される):
+
+```sh
+OPENPIPES_DB="$PWD/openpipes-YYYY-MM-DD.db" SERVER_PORT=3124 npm start
+# → http://127.0.0.1:3124/ でパイプ一覧が載っていることを見て、止める
+```
+
+サーバーへ戻すときは PteWorker を止めてから `openpipes.db` を置き換える。隣に古い `openpipes.db-wal` /
+`-shm` が残っていたら、新しい DB に別の WAL が被らないよう先に消しておく。`sessions` も同じファイルに
+入っているので、**古いバックアップに戻すと Google ログイン中の全員がログインし直しになる**
+(Basic 認証はセッションを使わないので影響しない)。
 
 ## 6. 環境変数
 
@@ -165,7 +184,7 @@ node -e "new (require('node:sqlite').DatabaseSync)('/home/container/openpipes/op
 | `OPENPIPES_GOOGLE_CLIENT_ID` | (未設定) | 設定すると Google ログインモード。`OPENPIPES_PASSWORD` との併用は起動拒否(§8) |
 | `OPENPIPES_GOOGLE_CLIENT_SECRET` | (未設定) | 同上。ID と 2 つセットで必須 |
 | `OPENPIPES_ALLOWED_USERS` | (未設定) | Google モードのみ。カンマ区切りのメールアドレスか `@ドメイン`。**未設定だと Google アカウントを持つ誰でも入れる** |
-| `OPENPIPES_OIDC_ISSUER` | `https://accounts.google.com` | OIDC プロバイダ。通常は変えない |
+| `OPENPIPES_OIDC_ISSUER` | `https://accounts.google.com` | OIDC プロバイダ。**本番では変えない**。同梱の偽プロバイダで手元から Google モードを試すときだけ差し替える(§8) |
 | `OPENPIPES_HOST` | 全インターフェース | 待ち受けアドレス。PteWorker では `127.0.0.1`(プロキシ経由で届く) |
 | `OPENPIPES_READONLY` | (未設定 = 書き込み可) | `1` で `POST /api/pipes` と `DELETE /api/pipes/:id` を 403 |
 | `OPENPIPES_CACHE_TTL` | `300` | 公開フィードのメモリキャッシュ秒数。`0` で無効 |
@@ -192,9 +211,21 @@ node -e "new (require('node:sqlite').DatabaseSync)('/home/container/openpipes/op
   `/pipes/<id>/run` は認証なしで誰でも読める(RSS リーダーがログインできないため。仕様)。
   公開したくないパイプの id を、README・コミットメッセージ・issue・チャットなど人目に付く場所に貼らないこと
   (同梱デモの `demo-*` は全員共通なので除く)。
+- **削除は必ず 200 が返る。消えた証拠にならない。** `DELETE /api/pipes/<id>` は、存在しない id でも、
+  他人(別の Google ユーザー、Basic 認証時代の `local`)のパイプの id でも `{"ok":true}` を返す
+  (他人のパイプの有無を漏らさないための冪等な削除。仕様)。id が漏れて公開フィードを止めたいときは、
+  200 で終わりにせず **`curl -s -o /dev/null -w '%{http_code}\n' <サイト URL>/pipes/<id>/run` が 404 になること**
+  を確かめる(消えていれば即 404 になる。キャッシュに残り続けることはない — 実測)。
+  §8 でモードを切り替えたあとは `local` のパイプを今のユーザーからは消せず、200 が返るだけでフィードは生き続ける。
+  消すには先に持ち主を移す(§8)か、`.env` を Basic に戻す。
 - 公開フィード `/pipes/<id>/run`、`/demo/*.xml`、`/api/config`、`/auth/*` は認証なし(仕様)。ここに認証を掛けてはいけない。
 - デプロイトークンと `.sorahost.json` はコミットしない(`.gitignore` 済み)。
   漏れたら PteWorker のコンソールで `token rotate`。
+- **Google のクライアント シークレットをコマンドラインに書かない。** シェルの履歴・`ps` の出力・
+  `/proc/<pid>/environ` に残る(§3 のような `VAR=... npm start` の書き方をこの値でやらないこと)。
+  値は `.env` にだけ書き、手元の `.env` は `chmod 600` にする。漏れたら Google Cloud Console で
+  シークレットをローテートし、PteWorker の `.env` を置き直して**再起動する** —
+  環境変数は起動時にしか読まれないので、再起動するまで古いシークレットのまま動く。
 - `OPENPIPES_ALLOW_PRIVATE` は設定しない。設定すると、保存されたパイプから内部アドレスへ取得できてしまう。
 - サイト URL が http のみの場合、Basic 認証は平文で流れる。強いパスワードで緩和する。
   `OPENPIPES_BASE_URL` が https のときだけセッション Cookie に `Secure` が付く。
@@ -203,11 +234,76 @@ node -e "new (require('node:sqlite').DatabaseSync)('/home/container/openpipes/op
 
 Basic 認証の代わりに Google アカウントでログインさせ、**ユーザーごとにパイプを分ける**モード。
 
+### 本物の Google を用意する前に(手元で一周する)
+
+偽の OIDC プロバイダが `node_modules/openpipes/test/fake-issuer.mjs` として手元にも入っている。
+これを `OPENPIPES_OIDC_ISSUER` に向ければ、**Google アカウントも Cloud Console の設定も無しで**、
+このリポジトリのランチャーごと Google モードを一周できる。Google に切り替えると Basic は外れる
+(併用は起動拒否。§7)ので、許可リストや `OPENPIPES_BASE_URL` を実機で書き損じると入る手段が両方無くなる。
+Console を触る前にここで潰しておく。
+
+```sh
+mkdir -p ~/tmp/op-verify
+cat > ~/tmp/op-verify/issuer.mjs <<'EOF'
+import { startFakeIssuer } from 'file:///home/<あなた>/GitHub/hello-pte-worker/node_modules/openpipes/test/fake-issuer.mjs';
+const issuer = await startFakeIssuer({ clientId: 'test', clientSecret: 'test-secret' });
+if (process.env.USER_JSON) issuer.setUser(JSON.parse(process.env.USER_JSON));
+console.log(issuer.issuer);
+EOF
+USER_JSON='{"sub":"u1","email":"you@example.com","email_verified":true,"name":"テスト"}' \
+  node ~/tmp/op-verify/issuer.mjs &   # 表示された http://127.0.0.1:<port> を控える(起動ごとに変わる)
+```
+
+ランチャー固有の注意が 3 つある。**`ENV_FILE=/nonexistent`** で手元の `.env` を読ませない
+(`OPENPIPES_PASSWORD` が入っていると「cannot be combined」で起動を拒否される)、
+**`SERVER_PORT` はコマンドラインで渡す**(`.env` からは読まれない。§6)、
+**`OPENPIPES_DB` は捨ててよいパス**にする(本番の DB を指すと偽ユーザーのセッションが本番 DB に入る)。
+
+```sh
+ENV_FILE=/nonexistent SERVER_PORT=3123 \
+OPENPIPES_GOOGLE_CLIENT_ID=test OPENPIPES_GOOGLE_CLIENT_SECRET=test-secret \
+OPENPIPES_BASE_URL=http://127.0.0.1:3123 \
+OPENPIPES_OIDC_ISSUER=http://127.0.0.1:<偽 issuer のポート> \
+OPENPIPES_ALLOWED_USERS=you@example.com \
+OPENPIPES_DB="$HOME/tmp/op-verify/t.db" \
+  node server.js
+```
+
+ブラウザで `http://127.0.0.1:3123`(`OPENPIPES_BASE_URL` と同じ表記で。違うと保存が 403)を開けば
+一周できる。curl だけでも確かめられる:
+
+```sh
+curl -s -L -c jar -b jar -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3123/auth/google/login   # 200
+curl -s -b jar http://127.0.0.1:3123/api/config
+# → {"readOnly":false,"auth":"google","user":{"name":"テスト","email":"you@example.com",...}}
+```
+
+`OPENPIPES_ALLOWED_USERS` を許可外にして同じことをすると `/auth/google/callback` が **403** を返し
+`user` は `null` のまま。許可リストの書き方はここで確かめる。`USER_JSON` を変えて issuer を立て直せば
+別ユーザーになるので、パイプが互いに見えないことも見られる。終わったら issuer とサーバーを止め、
+`~/tmp/op-verify` ごと消す。
+
+> **確認済み**(2026-09-03、Node v24.19.0、`node_modules/openpipes` は `6aca055`)。上の出力・403 まで再現した。
+> `npm test` のケース E が同じ流れを自動で通している。本物の Google 固有の挙動(同意画面のテストユーザー、
+> `redirect_uri_mismatch`)はここでは出ないので、最後は実機で一度通すこと。
+
+### Google Cloud Console の設定
+
 1. [Google Cloud Console](https://console.cloud.google.com/) で「API とサービス」→「OAuth 同意画面」を設定する
    (スコープは `openid` `email` `profile` だけ)。
-2. 「認証情報」→「認証情報を作成」→「OAuth クライアント ID」→ 種類は **ウェブ アプリケーション**。
-3. 「承認済みのリダイレクト URI」に `<OPENPIPES_BASE_URL>/auth/google/callback` を **完全一致** で登録する
-   (例: `https://xxx.example/auth/google/callback`)。
+2. **公開ステータスとテストユーザーを決める(一番の落とし穴)。** 同意画面は作った直後は「テスト中」で、
+   **テストユーザーに追加したアカウントしかログインできない。自分自身も追加が要る。**
+   追加していないアカウントは Google 側で弾かれ、ブラウザには
+   「Google からエラーが返されました: access_denied」としか出ない(サーバーの設定は無関係)。
+   **手順 4 の `OPENPIPES_ALLOWED_USERS` に書くアドレスは、全部テストユーザーにも入れておく。**
+   個人の Gmail で作ったプロジェクトでは「内部」を選べないので、自分以外にも使わせるなら「本番」に切り替える
+   (`openid` `email` `profile` は機微スコープではないので通常は審査なしで公開できるが、
+   承認済みドメインの登録や所有権の確認を求められることがある)。
+3. 「認証情報」→「認証情報を作成」→「OAuth クライアント ID」→ 種類は **ウェブ アプリケーション**。
+   「承認済みのリダイレクト URI」に `<OPENPIPES_BASE_URL>/auth/google/callback` を **完全一致** で登録する
+   (例: `https://xxx.example/auth/google/callback`)。スキーム・ホスト名・ポート・パス・末尾スラッシュが
+   1 文字でも違うと `redirect_uri_mismatch` になる。`http` が使えるのは localhost と 127.0.0.1 だけで、
+   PteWorker のサイト URL は https。
 4. `.env` を次のようにして置き直し、PteWorker を再起動する:
    ```
    OPENPIPES_PASSWORD=                       # ← 空にする(併用すると起動しない)
@@ -218,17 +314,67 @@ Basic 認証の代わりに Google アカウントでログインさせ、**ユ�
    OPENPIPES_DB=/home/container/openpipes/openpipes.db
    OPENPIPES_HOST=127.0.0.1
    ```
-5. `logs` に `auth=google` と `OpenPipes listening on ... (db ..., Google login: allowlist of 1)` が出れば成功。
+5. `logs` に `auth=google` と `OpenPipes listening on ... (db ..., Google login: allowlist of 1)` が出れば
+   **起動は**成功。ただしこの 2 行は Google Console 側の設定が間違っていても出る。
+   **必ずブラウザで実際にログインし、`logs` に `login u-<16 桁の hex>` が出るところまで確認する**
+   (認証に関してサーバーが増やすログは `login <ユーザー id>` と `logout <ユーザー id>` の 2 行だけ。
+   トークン・認可コード・Cookie・メールアドレスは出ない)。
+   ここまで出なければ Google 側で弾かれている。下の落とし穴 2 つを見る。
 
 覚えておくこと:
 
 - **`OPENPIPES_ALLOWED_USERS` を必ず設定する。** 未設定だと Google アカウントを持つ誰でもログインでき、
   自分のパイプを作れてしまう(起動時に `anyone can sign in` と表示される)。
   `@example.com` と書けばそのドメイン全員。照合には確認済みメールアドレスを使う。
+- **持ち主は Google の `sub` で決まり、メールアドレスでは決まらない。許可リストはアドレスで照合する。**
+  アドレスを変えてもパイプは自分のまま残るが、`OPENPIPES_ALLOWED_USERS` に古いアドレスが残っていると
+  **次のログインから自分が入れなくなる**(すでに持っている Cookie は 30 日切れるまで効くので、気付くのが遅れる)。
+  アドレスを変えたら `.env` も直して再起動すること。弾かれても `logs` に理由は出ず、ブラウザ側にだけ出る。
+  逆に Google 側で `sub` が変わった場合(アカウントを消して作り直した等)は別人扱いになり、
+  パイプは DB に残ったまま一覧が空になる — 下の引き継ぎ手順で移せる。
+- **`redirect_uri_mismatch` は `logs` に何も残らない。** Google の画面で終わってサーバーまで届かないので、
+  「ログに何も出ていないから設定は合っている」と誤診しやすい(§4 の切り分けが効かない唯一の失敗)。
+  登録する文字列は推測せず、サーバーが実際に送る値をそのままコピーする:
+  ```sh
+  curl -s -o /dev/null -D - https://xxx.example/auth/google/login | grep -i '^location:'
+  ```
+  `Location:` の中の `redirect_uri=`(URL エンコードされている)がその文字列。
+  この出力には本物のクライアント ID も入るので、人目に付く場所に貼らないこと。
+  `curl -I` は HEAD リクエストになり、このサーバーは HEAD のルートを持たないので**全パスが 404** になる。使わない。
 - `OPENPIPES_BASE_URL` は **ブラウザで実際に使う URL** と一致させる。違うと保存が 403 になる(`Origin` の照合)。
-- モードを切り替えると、Basic 認証時代の持ち主 `local` のパイプは一覧から見えなくなる
+- モードを切り替えると、Basic 認証時代の持ち主 `local` のパイプは一覧からも `GET /api/pipes` からも見えなくなる
   (**消えてはいない**。公開フィード `/pipes/<id>/run` は引き続き読める。Basic に戻せばまた見える)。
+  **Google モードのまま引き継ぐ手段はエディタに無く、DB を直接書き替えるしかない**(下記)。
 - セッションは 30 日で切れる。DB に入るのは Cookie そのものではなく SHA-256。
+
+### `local` のパイプを Google のユーザーへ引き継ぐ
+
+手で 1 回だけ行う移行。切り替えたあとでは一覧に出ないので、**引き継ぐかどうかは切り替える前に決める**
+(出し忘れたら `.env` を Basic に戻して起動し直せばまた見える)。
+
+**id が変わってよいなら DB を触らなくてよい。** Basic のうちにエディタの読み込み ▾ →「JSON を書き出す」で
+1 件ずつ手元に出し、Google でログインしてから「JSON を読み込む」で入れ直す(§5)。
+ただし **id は採番し直されるので、RSS リーダーに登録済みの `/pipes/<id>/run` は全部貼り直しになる**(§4 の 8)。
+
+**id を保ったまま引き継ぐなら**、DB の `owner_id` を書き換えるしかない。
+**先に §5 のバックアップを取り、Google で一度ログインして自分のユーザー行を作り、サーバーを止めてから**行う。
+**引き継ぐと `local` からは消えるので、Basic に戻したときは一覧が空になる**(片道)。
+
+1. 移す先のユーザー id は、ログイン直後の `logs` に出る `login u-<16 桁の hex>` の部分。
+   ログを流してしまったら DB から引く(出力には本物のメールアドレスが出るので、そのまま貼らないこと):
+   ```sh
+   node -e "console.log(new (require('node:sqlite').DatabaseSync)('/home/container/openpipes/openpipes.db').prepare('SELECT id, email FROM users').all())"
+   ```
+2. サーバーを止めてから移す(表示される `changes` が移った件数):
+   ```sh
+   node -e "const d=new (require('node:sqlite').DatabaseSync)('/home/container/openpipes/openpipes.db');console.log(d.prepare(\"UPDATE pipes SET owner_id = ? WHERE owner_id = 'local'\").run('u-<ここに 16 桁の hex>'))"
+   ```
+   id を間違えると `FOREIGN KEY constraint failed` で止まる(黙って壊れることはない。実測)。
+
+起動し直すと一覧に出る。パイプの id は変わらないので公開フィードの URL もそのまま。
+スキーマは OpenPipes のものなので、この書き換えは自己責任で。ランチャーやテストからは触らない。
+**PteWorker のコンソールでコマンドを打てない場合**(§10)は、サーバーを止めて `openpipes.db` /
+`-wal` / `-shm` をファイルマネージャで落とし、手元で同じ 2 つを実行してから 3 ファイルを戻す。
 
 ## 9. 更新手順
 

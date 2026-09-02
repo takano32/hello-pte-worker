@@ -9,6 +9,8 @@ import { fileURLToPath } from 'node:url';
 
 import { findEnvFile, parseEnv, parseEnvFallback, applyEnv, PLATFORM_KEYS } from '../lib/env.js';
 import { MIN_NODE, meetsMinimum, parseVersion } from '../lib/version.js';
+// OpenPipes に同梱されている偽 OIDC プロバイダ。Google アカウント無しで google モードを一周できる
+import { startFakeIssuer } from 'openpipes/test/fake-issuer.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -132,11 +134,13 @@ function childEnv(extra) {
   return { ...env, ...extra };
 }
 
+// extra はオブジェクトでも、ポートを受け取る関数でもよい(OPENPIPES_BASE_URL はポートに依るため)
 async function withServer(extra, body) {
   const port = nextPort++;
+  const resolved = typeof extra === 'function' ? extra(port) : extra;
   const child = spawn(process.execPath, [path.join(ROOT, 'server.js')], {
     cwd: ROOT,
-    env: childEnv({ SERVER_PORT: String(port), ...extra }),
+    env: childEnv({ SERVER_PORT: String(port), ...resolved }),
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   // stdout と stderr は分けて溜める(WARNING は stderr に出る)
@@ -273,6 +277,104 @@ test('ケース D: OPENPIPES_READONLY=1 で保存が 403 になる', async () =>
     assert.equal((await postPipe(origin)).status, 403);
     assert.match(logs().stdout, /read-only=true/);
   });
+});
+
+// --------------------------------------------------- smoke: google モード
+
+// Cookie を持ち回るだけの最小の入れ物。fetch は redirect: 'manual' で 1 ホップずつ進める
+function cookieJar() {
+  const jar = new Map();
+  return {
+    header: () => [...jar].map(([k, v]) => `${k}=${v}`).join('; '),
+    take(res) {
+      for (const raw of res.headers.getSetCookie?.() ?? []) {
+        const [pair] = raw.split(';');
+        const eq = pair.indexOf('=');
+        const name = pair.slice(0, eq).trim();
+        const value = pair.slice(eq + 1).trim();
+        if (value === '' || /Max-Age=0/i.test(raw)) jar.delete(name);
+        else jar.set(name, value);
+      }
+      return res;
+    },
+  };
+}
+
+// /auth/google/login → 偽 issuer の /authorize → /auth/google/callback まで進めて、
+// callback の応答を返す(成功なら 302、許可外なら 4xx)。
+async function walkLogin(origin, jar) {
+  const hop = (url) => fetch(url, {
+    redirect: 'manual',
+    headers: jar.header() ? { cookie: jar.header() } : {},
+  }).then((r) => jar.take(r));
+
+  const login = await hop(`${origin}/auth/google/login`);
+  assert.equal(login.status, 302, '/auth/google/login が 302 を返さない');
+  const authorize = await hop(login.headers.get('location'));
+  assert.equal(authorize.status, 302, `偽 issuer の /authorize が 302 を返さない: ${authorize.status}`);
+  const callback = authorize.headers.get('location');
+  assert.ok(callback.startsWith(`${origin}/auth/google/callback`), `戻り先が違う: ${callback}`);
+  return hop(callback);
+}
+
+test('ケース E: 偽 issuer 相手に google モードが一周し、許可リストが効く', async () => {
+  const issuer = await startFakeIssuer({ clientId: 'test-client', clientSecret: 'test-secret' });
+  const googleEnv = (port) => ({
+    ENV_FILE: path.join(ROOT, 'no-such-.env'),   // 手元の .env を読ませない(併用は起動拒否になる)
+    OPENPIPES_DB: ':memory:',
+    OPENPIPES_HOST: '127.0.0.1',
+    OPENPIPES_BASE_URL: `http://127.0.0.1:${port}`,
+    OPENPIPES_GOOGLE_CLIENT_ID: 'test-client',
+    OPENPIPES_GOOGLE_CLIENT_SECRET: 'test-secret',
+    OPENPIPES_OIDC_ISSUER: issuer.issuer,
+    OPENPIPES_ALLOWED_USERS: 'allowed@example.com',
+  });
+
+  try {
+    await withServer(googleEnv, async ({ origin, logs }) => {
+      const { stdout, stderr, all } = logs();
+      assert.match(stdout, /auth=google/, `ログに auth=google が無い: ${stdout}`);
+      assert.ok(!all.includes('test-secret'), 'シークレットがログに出ている');
+      assert.ok(!stderr.includes('WARNING'), 'google モードなのに WARNING が出ている');
+
+      // ログイン前
+      assert.deepEqual(await (await fetch(`${origin}/api/config`)).json(),
+        { readOnly: false, auth: 'google', user: null });
+      // エディタは 401 ではなく開く(ログイン画面はエディタが出す)
+      assert.equal((await fetch(`${origin}/`)).status, 200);
+
+      // 許可外は弾かれ、ログインできない
+      const stranger = cookieJar();
+      issuer.setUser({ sub: 's1', email: 'stranger@example.com', email_verified: true, name: '部外者' });
+      const denied = await walkLogin(origin, stranger);
+      assert.ok(denied.status >= 400, `許可外が弾かれていない: ${denied.status}`);
+      const asStranger = await (await fetch(`${origin}/api/config`,
+        { headers: { cookie: stranger.header() } })).json();
+      assert.equal(asStranger.user, null, '許可外がログインできてしまっている');
+
+      // 許可済みは一周でき、セッションでパイプ一覧が読める
+      const allowed = cookieJar();
+      issuer.setUser({ sub: 'a1', email: 'allowed@example.com', email_verified: true, name: '許可' });
+      const ok = await walkLogin(origin, allowed);
+      assert.ok(ok.status === 302 || ok.status === 200, `許可済みが弾かれた: ${ok.status}`);
+      const cfg = await (await fetch(`${origin}/api/config`,
+        { headers: { cookie: allowed.header() } })).json();
+      assert.equal(cfg.auth, 'google');
+      assert.ok(cfg.user && cfg.user.email === 'allowed@example.com',
+        `user が入っていない: ${JSON.stringify(cfg)}`);
+
+      const list = await fetch(`${origin}/api/pipes`, { headers: { cookie: allowed.header() } });
+      assert.equal(list.status, 200);
+      assert.ok((await list.json()).some((p) => p.id === 'demo-tech-filter'), 'デモが一覧に出ていない');
+
+      // ログに出るのは login <ユーザー id> だけ。メールもトークンも出ない
+      const after = logs();
+      assert.match(after.all, /login u-[0-9a-f]{16}/, `login の行が無い: ${after.all}`);
+      assert.ok(!after.all.includes('allowed@example.com'), 'メールアドレスがログに出ている');
+    });
+  } finally {
+    await issuer.close();
+  }
 });
 
 // ------------------------------------------------------------------- runner

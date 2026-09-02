@@ -549,6 +549,14 @@ OpenPipes が `13414c0` → `6aca055`(`main` HEAD)に進んだ。手元のクロ
 このリポジトリの `package-lock.json` はまだ `13414c0` を指しているので、以下で追従する。
 T10 から順に進め、各タスクの受け入れ基準を満たしたら `[ ]` を `[x]` に変える。
 
+> **追記(2026-09-03)**: その後 OpenPipes に `d568509`「Write down the operational traps the
+> verification run turned up」が積まれた。**README.md だけの変更**(+66/−9)で、ランタイムのコードも
+> `package.json` も動いていないため、**再固定は不要**(`package-lock.json` は `6aca055` のままでよい)。
+> このコミットは**まだ push されていない**(`origin/main` は `6aca055`)ので、`npm install` で取れるのも
+> `6aca055` のまま。§9.2 の仕様の記述は引き続き正しい。
+> ただし d568509 は**実測に基づく運用上の落とし穴**を初めて書き下ろしており、その多くはこの配備リポジトリの
+> README に効く。反映は §9.5 の T19 で行った。
+
 ### 9.1 何が変わったか(このリポジトリに効く差分だけ)
 
 | 変更(OpenPipes 側) | このリポジトリへの影響 |
@@ -936,13 +944,63 @@ push はしない(第 1 期と同じ。リモートは無く、ユーザーの�
 > 残るのは**この作業環境では原理的に確かめられない 3 点**だけ: PteWorker の Node の版、
 > `/home/container/openpipes/` が再デプロイをまたぐか、コンソールで任意コマンドを打てるか。
 
+### [x] T18. Google モードを偽 issuer で手元から確かめる(実機不要)
+
+`node_modules/openpipes/test/fake-issuer.mjs` がパッケージに同梱されていて `startFakeIssuer` を export しているので、
+Google アカウントもデプロイトークンも無しに、このリポジトリのランチャーごと Google モードを一周できる。
+T17 の 1〜4 と違って実機に依らないので、ユーザーの一度きりの実機作業に持ち込む未知を減らせる(5c1169c と同じ理由)。
+操作手順は **README §8 の「本物の Google を用意する前に(手元で一周する)」**(重複させない)。
+
+`test/launcher-test.js` に **ケース E** を足す。既存ケースと同じ流儀で子プロセスを起こし、`ENV_FILE` を
+存在しないパスにして手元の `.env` を無効化し(`OPENPIPES_PASSWORD` が入っていると併用扱いで起動を拒否される)、
+`OPENPIPES_DB=:memory:`、`OPENPIPES_BASE_URL` は `withServer` が決めたポートに合わせる。確かめること:
+
+- 起動ログに `auth=google` が出て、`OPENPIPES_GOOGLE_CLIENT_SECRET` の値がログのどこにも出ない
+- `/api/config` が `auth:"google"`、ログイン前は `user:null`。エディタ `/` は 401 ではなく 200
+- 許可外のアドレスは `/auth/google/callback` で弾かれ、`user` は `null` のまま
+- 許可済みは往復でき、セッションで `GET /api/pipes` が読めて同梱デモが載っている
+- ログに出る認証の行は `login u-<16 桁の hex>` だけで、メールアドレスは出ない
+
+**受け入れ基準**: `npm test` にケース E が入って pass し(単体 6 + ケース A〜E = 11 件)、`data/` にファイルを残さない。
+
+> **実施済み(2026-09-03、Node v24.19.0)**: 上をケース E として実装し、11 件 pass。
+> 偽 issuer は `import { startFakeIssuer } from 'openpipes/test/fake-issuer.mjs'` で読んでいる
+> (OpenPipes に `exports` が無いので深い import が通る)。**OpenPipes 側が `package.json` に `files` を
+> 足して `test/` を同梱しなくなるとこの import は壊れる**ので、そのときは `../OpenPipes/test/fake-issuer.mjs`
+> から読むか、ケース E を落とす。
+
+### [x] T19. d568509 の運用上の落とし穴を README に反映する
+
+OpenPipes `d568509`(README のみ、未 push)が、実測に基づく落とし穴を書き下ろした。
+このリポジトリに効くものを README に取り込む。**再固定は不要**(§9 冒頭の追記)。取り込んだもの:
+
+| d568509 の指摘 | このリポジトリでの確認 | 反映先 |
+| --- | --- | --- |
+| 稼働中に `openpipes.db` だけをコピーすると**テーブルが 1 つも無い DB** になり得る | 実測で再現 | README §5 |
+| `VACUUM INTO` は出力先が既にあると `output file already exists` で止まる | 実測で再現。README のワンライナーは出力先を固定していたので日付入りの別名に直した | README §5 |
+| 復元の予行演習。`sessions` が同じファイルなので古いバックアップに戻すと全員ログインし直し | Basic 認証はセッションを使わないので影響しないことを追記 | README §5 |
+| 同意画面は「テスト中」だとテストユーザーしか入れず、外は `access_denied` だけ | (実機のみ。手順として記載) | README §8 手順 2 |
+| `redirect_uri_mismatch` はサーバーのログに残らない。`curl -D -` で実際の値を読む。`curl -I` は HEAD なので全パス 404 | 手元で再現(送信値は `<BASE_URL>/auth/google/callback`、HEAD は 404) | README §8 |
+| 認証のログは `login <id>` / `logout <id>` の 2 行だけ | 実測。`login u-<16 hex>`、メールは出ない | README §8 手順 5、ケース E |
+| クライアント シークレットをコマンドラインに書かない | — | README §7 |
+| `OPENPIPES_ALLOWED_USERS` 未設定は踏み台になる | — | README §8、`.env.example` |
+| 持ち主は `sub`、許可リストはアドレス照合。ズレると自分が締め出される | — | README §8 |
+| `local` のパイプの引き継ぎは `UPDATE pipes SET owner_id` しかない | 実測: `node:sqlite` は `foreign_keys` が既定 ON なので、誤った id は `FOREIGN KEY constraint failed` で止まる。ユーザー id は `u-<16 hex>` | README §8 の新しい小見出し |
+| `DELETE /api/pipes/:id` は存在しない id でも他人の id でも 200 | 実測。削除後の `/pipes/<id>/run` は**即 404**(キャッシュに残らない)ので、これが確認手段になる | README §7 |
+| 旧 `data/pipes/*.json` は自動移行されない | このリポジトリの 4 件はデモと byte 一致だったので移行対象なし(T11 で確認済み)。**追記不要** | — |
+
+**受け入れ基準**: 上の反映先がすべて README(と `.env.example`)に入っており、`npm test` が pass、
+`git status --short` が空。README に `OPENPIPES_DATA` / `data/pipes` / `authRequired` / `GitOps` が無いままであること。
+
 ### 9.6 受け入れ基準チェックリスト(第 2 期)
 
 - [x] `package-lock.json` の `openpipes` が `6aca055c4939a5c29146e3e131d45edb25aef36e` を指し、`engines.node` が `>=22.13.0`。
 - [x] `data/pipes` が git から消え、`sorahost.json` の `include` にも無い。`.gitignore` に `data/` がある。
 - [x] `.env.example` に `OPENPIPES_DB`、`OPENPIPES_BASE_URL`、Google の 3 変数(コメントアウト)があり、`OPENPIPES_DATA` が無い。
 - [x] ランチャーが Node 22.13 未満で分かる言葉で止まり、`OPENPIPES_DB` 未設定時に `<repo>/data/openpipes.db` を使い、`auth=` をログに出し、`none` なら `WARNING` を出す。値はログに出ない。
-- [x] `npm test` が pass(単体 + ケース A〜D)。テストが `data/` にファイルを残さない。
+- [x] `npm test` が pass(単体 + ケース A〜E)。テストが `data/` にファイルを残さない。
+- [x] 偽 issuer 相手にランチャーを `auth=google` で起動でき、ログイン往復と許可リストの弾きがケース E として `npm test` に入っている(T18)。
+- [x] d568509 の運用上の落とし穴が README に反映されている(T19)。
 - [x] `sorahost deploy --dry-run` の送信対象が `server.js`, `lib`, `package.json`, `node_modules/openpipes` だけで、`.env` の有無でファイル数が変わらない。
 - [x] README に `OPENPIPES_DATA` / `data/pipes` / `authRequired` / `GitOps` が残っておらず、Node 22.13、`OPENPIPES_DB`、`OPENPIPES_BASE_URL`、Google ログイン、バックアップ、未確認事項(Node の版)が書いてある。
 - [x] コミット済みで `git status --short` が空。
@@ -957,7 +1015,8 @@ push はしない(第 1 期と同じ。リモートは無く、ユーザーの�
 | DB の親ディレクトリの作成 | OpenPipes が起動時に `mkdir -p` する(`SPEC.md`「The parent directory is created at boot」) | 権限で失敗したら `logs` に出る。ファイルマネージャで作る |
 | `sqlite3` コマンド | PteWorker のコンテナには**無い**前提。バックアップは node ワンライナーで行う | あればそれでもよい |
 | `OPENPIPES_BASE_URL` に入れるサイト URL | `npx sorahost-cli whoami` で出るサイト URL が固定で、ブラウザで使う URL と同じ(https) | URL が変わると保存が 403 になる(CSRF の `Origin` 照合)。`.env` を直して再起動 |
-| Google ログインのリダイレクト URI | サイト URL が https で固定なら `<サイト URL>/auth/google/callback` を Google に登録できる | http のみ、または URL が変わるなら Google ログインは使わず Basic のまま |
+| Google ログインのリダイレクト URI | サイト URL が https で固定なら `<サイト URL>/auth/google/callback` を Google に登録できる | http のみ、または URL が変わるなら Google ログインは使わず Basic のまま。`http` が使えるのは localhost / 127.0.0.1 だけ(d568509) |
+| Google モードそのもの | ~~仮定~~ → **実測(2026-09-03)**。同梱の偽 issuer 相手に、このランチャー経由でログイン往復・許可リストの弾き・ユーザー分離まで通ることを確認し、`npm test` のケース E にした(T18) | 残るのは**本物の Google 固有の挙動**だけ: 同意画面のテストユーザー(未追加だと `access_denied`)と `redirect_uri_mismatch`(サーバーのログには何も出ない)。どちらも README §8 に手順として書いた |
 | SQLite の WAL とコンテナのファイルシステム | 通常のローカルディスクで WAL が動く | NFS 等で lock に失敗するなら `logs` に出る。OpenPipes 側で `journal_mode` を変える必要があるので、OpenPipes に issue として持ち込む |
 | 再デプロイ中の DB | 旧プロセスが止まってから新プロセスが開くので、同時に開かれることはない | 同時に開かれても WAL + `busy_timeout=5000` で待つ |
 
