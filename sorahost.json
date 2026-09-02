@@ -5,7 +5,6 @@
     "server.js",
     "lib",
     "package.json",
-    "node_modules/openpipes",
-    "data/pipes"
+    "node_modules/openpipes"
   ]
 }

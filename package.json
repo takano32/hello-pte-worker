@@ -4,7 +4,7 @@
   "private": true,
   "description": "OpenPipes on SORAHOST PteWorker, deployed with sorahost-cli",
   "type": "module",
-  "engines": { "node": ">=18" },
+  "engines": { "node": ">=22.13.0" },
   "scripts": {
     "start": "node server.js",
     "test": "node test/launcher-test.js",

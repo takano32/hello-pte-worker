@@ -625,7 +625,7 @@ hello-pte-worker/
 
 ### 9.5 タスク
 
-### [ ] T10. OpenPipes を `6aca055` に更新する
+### [x] T10. OpenPipes を `6aca055` に更新する
 
 ```sh
 cd /home/takano32/GitHub/hello-pte-worker
@@ -644,7 +644,7 @@ grep -n 'OPENPIPES_DB\|OPENPIPES_GOOGLE_CLIENT_ID' node_modules/openpipes/server
 
 **受け入れ基準**: 上の確認がすべて期待どおり。`git status --short` に `package.json` と `package-lock.json` だけが出る。
 
-### [ ] T11. `data/pipes`、`.gitignore`、`.env.example`、`sorahost.json` を改める
+### [x] T11. `data/pipes`、`.gitignore`、`.env.example`、`sorahost.json` を改める
 
 1. `data/pipes` を消す。**消す前に** `ls data/pipes` が `demo-*.json` 4 件だけであることを確かめる(2026-09-03 時点ではそうなっている)。デモ以外の JSON があれば消さず、T15 の手動確認でエディタの「JSON を読み込む」から DB に入れてから消す。
    ```sh
@@ -716,7 +716,7 @@ grep -n 'OPENPIPES_DB\|OPENPIPES_GOOGLE_CLIENT_ID' node_modules/openpipes/server
 
 **受け入れ基準**: `git status --short` に `data/pipes/*.json` の削除 4 件、`.gitignore`、`.env.example`、`sorahost.json` が出る。`.env.example` に `OPENPIPES_DATA` が無い。
 
-### [ ] T12. `lib/version.js` を足し、`server.js` を SQLite 前提に書き直す
+### [x] T12. `lib/version.js` を足し、`server.js` を SQLite 前提に書き直す
 
 仕様:
 
@@ -802,7 +802,14 @@ await import('openpipes/server.js');
 
 **受け入れ基準**: `cp .env.example .env` して `OPENPIPES_PASSWORD=test-only`、`OPENPIPES_DB=` を空(未設定扱いにするため行ごと削除)、`OPENPIPES_BASE_URL=` を空(行ごと削除)にした状態で `SERVER_PORT=3123 node server.js` を起動すると、`[launcher] node v24.19.0; /home/takano32/GitHub/hello-pte-worker/.env applied: OPENPIPES_PASSWORD, OPENPIPES_HOST; db /home/takano32/GitHub/hello-pte-worker/data/openpipes.db; auth=basic; read-only=false` と `OpenPipes listening on http://127.0.0.1:3123 (auth as "admin")` が出る。`curl -s http://127.0.0.1:3123/api/config` が `{"readOnly":false,"auth":"basic","user":null}` を返す。`data/openpipes.db` が出来ていて `git status --short` に出ない。
 
-### [ ] T13. `test/launcher-test.js` を更新する
+> **実測(2026-09-03、Node v24.19.0)**: 上の期待値はすべて満たしたが、ログの細部は 2 点ちがった。
+> どちらも OpenPipes / Node 側の都合なので、ランチャーは直さず README(T14)を実測に合わせてある。
+> 1. `applied:` のキー名は `util.parseEnv` が返す順、つまり**アルファベット順**に並ぶ
+>    (`.env` の記載順ではない)。例: `applied: OPENPIPES_HOST, OPENPIPES_PASSWORD`。
+> 2. OpenPipes の起動行には DB のパスが入る:
+>    `OpenPipes listening on http://127.0.0.1:3123 (db <DB のパス>, auth as "admin")`。
+
+### [x] T13. `test/launcher-test.js` を更新する
 
 第 1 期の流儀(依存なし、`node:assert/strict`、子プロセス、ネットワーク不要、`N passed, M failed`)は変えない。変更点:
 
@@ -830,7 +837,7 @@ await import('openpipes/server.js');
 
 **受け入れ基準**: `npm test` が pass。テスト後に `git status --short` にテスト由来の差分が無く、`data/` にも何も増えていない(すべて `:memory:` か一時ディレクトリを使う)。
 
-### [ ] T14. `README.md` を改訂する
+### [x] T14. `README.md` を改訂する
 
 節構成は第 1 期(9 節)を保ち、内容を差し替える。
 
@@ -847,7 +854,7 @@ await import('openpipes/server.js');
 
 **受け入れ基準**: README に `OPENPIPES_DATA`、`data/pipes`、`authRequired`、`GitOps` が残っていない(`grep -n 'OPENPIPES_DATA\|data/pipes\|authRequired\|GitOps' README.md` が空)。`OPENPIPES_DB`、`OPENPIPES_BASE_URL`、`22.13`、`VACUUM INTO`、`OPENPIPES_ALLOWED_USERS` がある。コマンドはすべて実際に動くもの。
 
-### [ ] T15. ローカルで最終確認
+### [x] T15. ローカルで最終確認
 
 ```sh
 cd /home/takano32/GitHub/hello-pte-worker
@@ -893,7 +900,7 @@ rm -f data/openpipes.db data/openpipes.db-wal data/openpipes.db-shm
 
 **受け入れ基準**: 上の期待値がすべて一致。dry-run の送信対象が `server.js/ lib/ package.json/ node_modules/openpipes/` で、`node_modules が含まれていません` の警告が出ず、2 回のファイル数が同じ。第 1 期(30 ファイル、343 KB)よりファイル数が変わっていてよい(OpenPipes の構成が変わったため)。`git status --short` に `.env`、`data/` が出ない。
 
-### [ ] T16. コミットする
+### [x] T16. コミットする
 
 ```sh
 git add -A
@@ -918,14 +925,14 @@ push はしない(第 1 期と同じ。リモートは無く、ユーザーの�
 
 ### 9.6 受け入れ基準チェックリスト(第 2 期)
 
-- [ ] `package-lock.json` の `openpipes` が `6aca055c4939a5c29146e3e131d45edb25aef36e` を指し、`engines.node` が `>=22.13.0`。
-- [ ] `data/pipes` が git から消え、`sorahost.json` の `include` にも無い。`.gitignore` に `data/` がある。
-- [ ] `.env.example` に `OPENPIPES_DB`、`OPENPIPES_BASE_URL`、Google の 3 変数(コメントアウト)があり、`OPENPIPES_DATA` が無い。
-- [ ] ランチャーが Node 22.13 未満で分かる言葉で止まり、`OPENPIPES_DB` 未設定時に `<repo>/data/openpipes.db` を使い、`auth=` をログに出し、`none` なら `WARNING` を出す。値はログに出ない。
-- [ ] `npm test` が pass(単体 + ケース A〜D)。テストが `data/` にファイルを残さない。
-- [ ] `sorahost deploy --dry-run` の送信対象が `server.js`, `lib`, `package.json`, `node_modules/openpipes` だけで、`.env` の有無でファイル数が変わらない。
-- [ ] README に `OPENPIPES_DATA` / `data/pipes` / `authRequired` / `GitOps` が残っておらず、Node 22.13、`OPENPIPES_DB`、`OPENPIPES_BASE_URL`、Google ログイン、バックアップ、未確認事項(Node の版)が書いてある。
-- [ ] コミット済みで `git status --short` が空。
+- [x] `package-lock.json` の `openpipes` が `6aca055c4939a5c29146e3e131d45edb25aef36e` を指し、`engines.node` が `>=22.13.0`。
+- [x] `data/pipes` が git から消え、`sorahost.json` の `include` にも無い。`.gitignore` に `data/` がある。
+- [x] `.env.example` に `OPENPIPES_DB`、`OPENPIPES_BASE_URL`、Google の 3 変数(コメントアウト)があり、`OPENPIPES_DATA` が無い。
+- [x] ランチャーが Node 22.13 未満で分かる言葉で止まり、`OPENPIPES_DB` 未設定時に `<repo>/data/openpipes.db` を使い、`auth=` をログに出し、`none` なら `WARNING` を出す。値はログに出ない。
+- [x] `npm test` が pass(単体 + ケース A〜D)。テストが `data/` にファイルを残さない。
+- [x] `sorahost deploy --dry-run` の送信対象が `server.js`, `lib`, `package.json`, `node_modules/openpipes` だけで、`.env` の有無でファイル数が変わらない。
+- [x] README に `OPENPIPES_DATA` / `data/pipes` / `authRequired` / `GitOps` が残っておらず、Node 22.13、`OPENPIPES_DB`、`OPENPIPES_BASE_URL`、Google ログイン、バックアップ、未確認事項(Node の版)が書いてある。
+- [x] コミット済みで `git status --short` が空。
 - [ ] (ユーザー)PteWorker の Node が 22.13 以上で、保存したパイプが再デプロイ後も残る。
 
 ### 9.7 未確認事項と仮定(第 2 期で増えた分。§7 に追加)
