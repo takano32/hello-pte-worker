@@ -104,7 +104,7 @@ grep -n 'SERVER_PORT\|OPENPIPES_HOST' server.js  # 両方ある
 
 **受け入れ基準**: 上の 3 つが期待どおり。違っていたら止まってユーザーに報告する(このタスクは再実行しない)。
 
-### [ ] T2. このリポジトリを初期化して依存を入れる
+### [x] T2. このリポジトリを初期化して依存を入れる
 
 ```sh
 cd /home/takano32/GitHub/hello-pte-worker
@@ -192,7 +192,7 @@ git commit -m "Initial commit: SORAHOST PteWorker deployment repo for OpenPipes"
 
 **受け入れ基準**: `npm install` 後に上の 4 つの確認が通る。`git status --short` に `node_modules/` が出ない。
 
-### [ ] T3. 公開するパイプの初期データを入れる
+### [x] T3. 公開するパイプの初期データを入れる
 
 OpenPipes のデモをそのままこのリポジトリのパイプ置き場に入れる(GitOps の初期値。後でユーザーが差し替える)。
 
@@ -206,7 +206,7 @@ git commit -m "Seed pipes with the OpenPipes demos"
 
 **受け入れ基準**: `data/pipes/*.json` が 4 件コミットされている。
 
-### [ ] T4. `lib/env.js` と `server.js`(起動ランチャー)を書く
+### [x] T4. `lib/env.js` と `server.js`(起動ランチャー)を書く
 
 仕様:
 
@@ -321,7 +321,7 @@ await import('openpipes/server.js');
 
 **受け入れ基準**: `cp .env.example .env` して `OPENPIPES_PASSWORD=test-only` を書いた状態で `SERVER_PORT=3123 node server.js` を起動すると、コンソールに `[launcher] /home/takano32/GitHub/hello-pte-worker/.env applied: OPENPIPES_PASSWORD, OPENPIPES_HOST, OPENPIPES_READONLY; ...` と `OpenPipes listening on http://127.0.0.1:3123 (auth as "admin", read-only)` が出る。`curl -s http://127.0.0.1:3123/api/config` が `{"readOnly":true,"authRequired":true}` を返す。
 
-### [ ] T5. `sorahost.json` を書く
+### [x] T5. `sorahost.json` を書く
 
 ```json
 {
@@ -343,7 +343,7 @@ await import('openpipes/server.js');
 
 **受け入れ基準**: `SORAHOST_ENDPOINT=https://example.invalid/_sorahost/dummy SORAHOST_TOKEN=dummy npx sorahost-cli deploy --dry-run --yes` が「送信対象: server.js/ lib/ package.json/ node_modules/openpipes/ data/pipes/」を表示し、`node_modules が含まれていません` の警告が**出ず**、アップロードせずに終了する。さらに、手元に `.env` が有るときと無いときで表示される**ファイル数が同じ**(`.env` が送られていない証拠)。ダミーの認証情報は dry-run では使われず、ネットワークにも出ない。
 
-### [ ] T6. テスト `test/launcher-test.js` を書く
+### [x] T6. テスト `test/launcher-test.js` を書く
 
 OpenPipes の `test/server-tests.js` と同じ流儀(依存なし、`node:assert/strict`、子プロセス起動、ネットワーク不要、最後に `N passed, M failed` を出して失敗なら exit 1)。内容:
 
@@ -369,7 +369,7 @@ OpenPipes の `test/server-tests.js` と同じ流儀(依存なし、`node:assert
 
 **受け入れ基準**: `npm test` が pass。テスト後に `git status --short` にテスト由来の差分が無い。
 
-### [ ] T7. `README.md`(配備・運用手引き)を書く
+### [x] T7. `README.md`(配備・運用手引き)を書く
 
 日本語。次の節を必ず含める。
 
@@ -389,7 +389,7 @@ OpenPipes の `test/server-tests.js` と同じ流儀(依存なし、`node:assert
 
 **受け入れ基準**: 上記 9 節がある。コマンドはすべて実際に動くものを書いている。
 
-### [ ] T8. ローカルで最終確認
+### [x] T8. ローカルで最終確認
 
 ```sh
 cd /home/takano32/GitHub/hello-pte-worker
@@ -421,7 +421,7 @@ SORAHOST_ENDPOINT=https://example.invalid/_sorahost/dummy SORAHOST_TOKEN=dummy \
 
 **受け入れ基準**: 上の期待値がすべて一致。dry-run に `node_modules が含まれていません` の警告が出ず、2 回のファイル数が同じ。`.env` を消した後、`git status --short` がクリーン(未コミットの成果物を除く)。
 
-### [ ] T9. コミットする(push はユーザー確認のうえで)
+### [x] T9. コミットする(push はユーザー確認のうえで)
 
 ```sh
 git add -A
@@ -492,14 +492,14 @@ git add package.json package-lock.json && git commit -m "Update sorahost-cli"
 ## 6. 受け入れ基準チェックリスト(全体)
 
 - [x] `../OpenPipes` の `main` に `SERVER_PORT` / `OPENPIPES_HOST` 対応(`13414c0`)が push されている。
-- [ ] `npm install` だけで `node_modules/openpipes` が入り、その `server.js` に `SERVER_PORT` と `OPENPIPES_HOST` がある。
-- [ ] このリポジトリで `npm test` が pass する。
-- [ ] `SERVER_PORT` だけを与えて `node server.js` が起動し、そのポートで応答する。`.env` の `PORT` / `SERVER_PORT` は無視される。
-- [ ] `.env` の値が効き、既存の環境変数を上書きしない。ログに値が出ない。`.env` はアプリのディレクトリから HOME まで遡って見つかる。
-- [ ] `OPENPIPES_DATA` を未作成のパスに向けると `data/pipes` の中身で初期化される。
-- [ ] `sorahost deploy --dry-run` の送信対象が `server.js`, `lib`, `package.json`, `node_modules/openpipes`, `data/pipes` だけで、node_modules 無しの警告が出ず、`.env` の有無でファイル数が変わらない。
-- [ ] `.env`, `.sorahost.json`, `node_modules/` はコミットされていない。`package-lock.json`, `data/pipes/*.json`, `server.js`, `lib/env.js`, `sorahost.json`, `.env.example` はコミットされている。
-- [ ] README に §4, §5 とセキュリティの注意、未確認事項が書いてある。
+- [x] `npm install` だけで `node_modules/openpipes` が入り、その `server.js` に `SERVER_PORT` と `OPENPIPES_HOST` がある。
+- [x] このリポジトリで `npm test` が pass する。
+- [x] `SERVER_PORT` だけを与えて `node server.js` が起動し、そのポートで応答する。`.env` の `PORT` / `SERVER_PORT` は無視される。
+- [x] `.env` の値が効き、既存の環境変数を上書きしない。ログに値が出ない。`.env` はアプリのディレクトリから HOME まで遡って見つかる。
+- [x] `OPENPIPES_DATA` を未作成のパスに向けると `data/pipes` の中身で初期化される。
+- [x] `sorahost deploy --dry-run` の送信対象が `server.js`, `lib`, `package.json`, `node_modules/openpipes`, `data/pipes` だけで、node_modules 無しの警告が出ず、`.env` の有無でファイル数が変わらない。
+- [x] `.env`, `.sorahost.json`, `node_modules/` はコミットされていない。`package-lock.json`, `data/pipes/*.json`, `server.js`, `lib/env.js`, `sorahost.json`, `.env.example` はコミットされている。
+- [x] README に §4, §5 とセキュリティの注意、未確認事項が書いてある。
 
 ---
 

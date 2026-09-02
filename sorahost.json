@@ -1,0 +1,11 @@
+{
+  "mode": "node",
+  "start": "node server.js",
+  "include": [
+    "server.js",
+    "lib",
+    "package.json",
+    "node_modules/openpipes",
+    "data/pipes"
+  ]
+}
