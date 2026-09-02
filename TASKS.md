@@ -10,7 +10,7 @@
 > **2026-09-03 の状態**: §3 の T1〜T9(第 1 期)は 2026-09-02 に完了済み。その後 OpenPipes が
 > `13414c0` → `6aca055` に進み、保存先が SQLite になって `OPENPIPES_DATA` が消え、Node >= 22.13 が
 > 必要になり、Google ログインが入った。§1〜§8 は第 1 期の記録としてそのまま残す(**「13414c0 時点」の記述を含む**)。
-> **これから行う作業は §9「第 2 期」の T10〜T17**。§9 の記述が §1〜§8 と食い違う場合は §9 が正しい。
+> **これから行う作業は §9「第 2 期」の T10〜T20**。§9 の記述が §1〜§8 と食い違う場合は §9 が正しい。
 
 - 作業ディレクトリは 2 つ。
   - **このリポジトリ**: `/home/takano32/GitHub/hello-pte-worker`(2026-09-02 時点では `TASKS.md` だけ。git 未初期化)
@@ -549,14 +549,23 @@ OpenPipes が `13414c0` → `6aca055`(`main` HEAD)に進んだ。手元のクロ
 このリポジトリの `package-lock.json` はまだ `13414c0` を指しているので、以下で追従する。
 T10 から順に進め、各タスクの受け入れ基準を満たしたら `[ ]` を `[x]` に変える。
 
-> **追記(2026-09-03)**: その後 OpenPipes に `d568509`「Write down the operational traps the
-> verification run turned up」が積まれた。**README.md だけの変更**(+66/−9)で、ランタイムのコードも
-> `package.json` も動いていないため、**再固定は不要**(`package-lock.json` は `6aca055` のままでよい)。
-> このコミットは 2026-09-03 に push された(`origin/main` = `d568509`)ので、以後 `npm install` /
-> `npm update openpipes` で取れるのは `d568509` になる。**README だけの差分なので追従は任意**で、
-> `package-lock.json` を `6aca055` のままにしておいても動作は変わらない。§9.2 の仕様の記述は引き続き正しい。
-> ただし d568509 は**実測に基づく運用上の落とし穴**を初めて書き下ろしており、その多くはこの配備リポジトリの
-> README に効く。反映は §9.5 の T19 で行った。
+> **追記 1(2026-09-03)**: その後 OpenPipes に `d568509`「Write down the operational traps the
+> verification run turned up」が積まれ、push された。**README.md だけの変更**(+66/−9)で、
+> ランタイムのコードも `package.json` も動いていなかったため、**このコミット単体では再固定の理由に
+> ならなかった**。ただし d568509 は**実測に基づく運用上の落とし穴**を初めて書き下ろしており、
+> その多くはこの配備リポジトリの README に効く。反映は §9.5 の T19 で行った。
+>
+> **追記 2(2026-09-03)**: さらに `e0fe7cc`「Fix a login that ends in 500, and a gate that traps
+> unsaved work」が積まれ、`origin/main` = `e0fe7cc` になった。**今度は README だけではなくランタイムの
+> コードが動いている**(`server.js` に `headerSafeUrl()`、`public/index.html` / `editor.js` / `editor.css` に
+> ゲートからの JSON 書き出し)ので、**追従は任意ではない**。`npm update openpipes` で `e0fe7cc` に上げ、
+> `package-lock.json` を再固定する(§9.5 の T20)。`package.json`(`engines.node` = `>=22.13.0`、`files` 無し)と
+> `test/fake-issuer.mjs` は無変更なので、ケース E の深い import は壊れない。環境変数・起動ログ・
+> `OPENPIPES_DB` の扱いも動いていないので、ランチャーと `sorahost.json` に手は要らない。
+>
+> **実施済み(2026-09-03)**: `package-lock.json` は `e0fe7cc69ccc406141362ab456825c5c3b7e71a4` を指し、
+> `npm test` は 11 件 pass。以後このリポジトリが動かす OpenPipes は `e0fe7cc`
+> (`6aca055` → `d568509` → `e0fe7cc`)。
 
 ### 9.1 何が変わったか(このリポジトリに効く差分だけ)
 
@@ -574,7 +583,7 @@ T10 から順に進め、各タスクの受け入れ基準を満たしたら `[ 
 | 起動ログの末尾: `OpenPipes listening on http://<host>:<port> (Google login: ..., auth as "admin", read-only, ...)` | README の確認手順の期待行を直す |
 | `test/server-tests.js` が 40 件、`test/run-tests.js` が 101 件 | §1.2 の「81 + 22」は古い |
 
-### 9.2 OpenPipes 側の関連仕様(`6aca055` で確認済み。§1.2 を置き換える)
+### 9.2 OpenPipes 側の関連仕様(`e0fe7cc` で確認済み。§1.2 を置き換える)
 
 - Node.js **>= 22.13.0**、依存パッケージゼロ、ESM。`exports` / `main` は相変わらず無いので `import 'openpipes/server.js'` の深い import で起動する。
 - ポート: `PORT` → `SERVER_PORT` → `3000`。待ち受け: `OPENPIPES_HOST`(未設定なら全インターフェース)。変更なし。
@@ -598,7 +607,7 @@ T10 から順に進め、各タスクの受け入れ基準を満たしたら `[ 
 - `POST /api/pipes` の body は `{ id?, name, modules, wires }`。`id` 無しなら新規(サーバーが `slug-<16 hex>` を採番)、`id` 付きは自分のパイプの更新のみ。最小の有効な body は `{ name, modules: [{ id: 'm1', type: 'output', params: {}, x: 0, y: 0 }], wires: [] }`。
 - 同梱デモ: `assets/demo/pipes/demo-*.json`(4 件。`npm pack --dry-run` で同梱を確認済み)とフィード `assets/demo/*.xml`。パッケージに `data/` ディレクトリは**含まれない**。
 - OpenPipes の `.gitignore` は `data/*.db`, `data/*.db-wal`, `data/*.db-shm` を除外している。
-- テスト: `npm test` で 101 + 40 件。ネットワーク不要。Google のテストは偽の OIDC プロバイダ(`test/fake-issuer.mjs`)相手。
+- テスト: `npm test` で 101 + 41 件。ネットワーク不要。Google のテストは偽の OIDC プロバイダ(`test/fake-issuer.mjs`)相手。
 
 ### 9.3 設計方針の改訂(§1.3 の 3〜4 を置き換える。1, 2, 5, 6 はそのまま)
 
@@ -620,7 +629,7 @@ hello-pte-worker/
   TASKS.md               この文書
   README.md              配備・運用手引き(T14 で改訂)
   package.json           engines.node >= 22.13.0 に上げる
-  package-lock.json      openpipes を 6aca055 に固定
+  package-lock.json      openpipes を e0fe7cc に固定
   .gitignore             node_modules/ .env .sorahost.json *.log data/
   sorahost.json          include から data/pipes を外す
   .env.example           OPENPIPES_DB / OPENPIPES_BASE_URL / Google の欄を足し、OPENPIPES_DATA を消す
@@ -629,7 +638,7 @@ hello-pte-worker/
   lib/version.js         Node の版の比較(T12)
   test/launcher-test.js  期待値を更新、永続化のテストを追加(T13)
   data/                  手元の DB 置き場(git 管理外。data/pipes は消す)
-  node_modules/openpipes 6aca055 の OpenPipes 本体。デプロイに含まれる
+  node_modules/openpipes e0fe7cc の OpenPipes 本体。デプロイに含まれる
 ```
 
 ### 9.5 タスク
@@ -973,7 +982,8 @@ T17 の 1〜4 と違って実機に依らないので、ユーザーの一度き
 ### [x] T19. d568509 の運用上の落とし穴を README に反映する
 
 OpenPipes `d568509`(README のみ。2026-09-03 に push 済み)が、実測に基づく落とし穴を書き下ろした。
-このリポジトリに効くものを README に取り込む。**再固定は不要**(§9 冒頭の追記)。取り込んだもの:
+このリポジトリに効くものを README に取り込む。**d568509 単体では再固定の理由にならなかった**
+(その後 `e0fe7cc` で再固定した。T20)。取り込んだもの:
 
 | d568509 の指摘 | このリポジトリでの確認 | 反映先 |
 | --- | --- | --- |
@@ -993,15 +1003,46 @@ OpenPipes `d568509`(README のみ。2026-09-03 に push 済み)が、実測に�
 **受け入れ基準**: 上の反映先がすべて README(と `.env.example`)に入っており、`npm test` が pass、
 `git status --short` が空。README に `OPENPIPES_DATA` / `data/pipes` / `authRequired` / `GitOps` が無いままであること。
 
+### [x] T20. OpenPipes `e0fe7cc` に追従する(バグ修正。ランタイムのコードが動いた)
+
+`d568509` と違い、`e0fe7cc`「Fix a login that ends in 500, and a gate that traps unsaved work」は
+**ランタイムのコードを変えた**ので、§5.2 の更新手順どおりに追従する。
+
+```sh
+npm update openpipes
+grep -A3 '"node_modules/openpipes"' package-lock.json   # resolved が ...#e0fe7cc69ccc406141362ab456825c5c3b7e71a4
+grep -n 'headerSafeUrl' node_modules/openpipes/server.js
+npm test                                                # 11 件 pass
+```
+
+このリポジトリに効く差分:
+
+| e0fe7cc の中身 | このリポジトリでの確認 | 反映先 |
+| --- | --- | --- |
+| `return_to` が非 ASCII(`/あ` など)だと `writeHead` が投げる。しかも `Set-Cookie` の**後**なので、成功したログインが有効なセッション Cookie を持ったまま 500 になる。`headerSafeUrl()` が全 `Location` をパーセントエンコード | 実測: 偽 issuer 経由で `return_to=%2F%E3%81%82` を通し、**302 + `Location: <base>/%E3%81%82` + セッション Cookie** を確認(修正前は 500)。ケース E に組み込んで回帰テストにした | `test/launcher-test.js` |
+| ゲート(全画面のログイン画面)に **「⭳ 編集中の内容を JSON で保存」** が付いた。キャンバスが空でないときだけ出る | 実測: 書き出しは `exportPipe()`(ブラウザ内の Blob)なのでセッション無しで動く。戻すと `savedId` が null になり **id は採番し直される** | README §8「覚えておくこと」 |
+| ランチャーが触る面(環境変数名・起動の順序・起動ログ・`OPENPIPES_DB` の扱い・`engines.node`)には**何も無い**。`server.js` 側の差分は `redirectTo` に `headerSafeUrl()` を挟むだけで、`engines.node` は両側とも `>=22.13.0`、`lib/version.js` の `MIN_NODE` も `22.13.0` のままでよい | 確認済み | 変更なし |
+| `test/fake-issuer.mjs` と `package.json`(`files` 無し)は無変更 | ケース E の深い import は壊れない | 変更なし |
+
+**上流の回帰テストを写さないこと。** 非 ASCII の `return_to` は OpenPipes 側の `test/server-tests.js` が、
+ゲートの書き出しは `test/e2e/suites.mjs` が既に守っている。このリポジトリのケース E が足すのは
+「**このランチャー経由で**同じことが成り立つ」ところだけ。
+
+**受け入れ基準**: `package-lock.json` が `e0fe7cc` を指し、`npm test` が 11 件 pass(ケース E の一周に
+非 ASCII の `return_to` が入っている)。`sorahost deploy --dry-run` の送信対象とファイル数が `6aca055` 時点から
+増減していない(サイズだけ増える)。`git status --short` が `package-lock.json` だけ(コミット後は空)。
+
 ### 9.6 受け入れ基準チェックリスト(第 2 期)
 
-- [x] `package-lock.json` の `openpipes` が `6aca055c4939a5c29146e3e131d45edb25aef36e` を指し、`engines.node` が `>=22.13.0`。
+- [x] `package-lock.json` の `openpipes` が `e0fe7cc69ccc406141362ab456825c5c3b7e71a4` を指し(`6aca055` → `d568509` → `e0fe7cc`。§9.5 の T20)、`engines.node` が `>=22.13.0`(OpenPipes 側も `>=22.13.0`)。
 - [x] `data/pipes` が git から消え、`sorahost.json` の `include` にも無い。`.gitignore` に `data/` がある。
 - [x] `.env.example` に `OPENPIPES_DB`、`OPENPIPES_BASE_URL`、Google の 3 変数(コメントアウト)があり、`OPENPIPES_DATA` が無い。
 - [x] ランチャーが Node 22.13 未満で分かる言葉で止まり、`OPENPIPES_DB` 未設定時に `<repo>/data/openpipes.db` を使い、`auth=` をログに出し、`none` なら `WARNING` を出す。値はログに出ない。
 - [x] `npm test` が pass(単体 + ケース A〜E)。テストが `data/` にファイルを残さない。
 - [x] 偽 issuer 相手にランチャーを `auth=google` で起動でき、ログイン往復と許可リストの弾きがケース E として `npm test` に入っている(T18)。
 - [x] d568509 の運用上の落とし穴が README に反映されている(T19)。
+- [x] OpenPipes `e0fe7cc` に再固定され、このリポジトリのコード・設定は無変更(T20)。
+- [x] セッションが編集中に切れたときの退避(ゲートの「⭳ 編集中の内容を JSON で保存」を先に押すこと、戻すと id が変わること)が README §8 に書いてある(T20)。
 - [x] `sorahost deploy --dry-run` の送信対象が `server.js`, `lib`, `package.json`, `node_modules/openpipes` だけで、`.env` の有無でファイル数が変わらない。
 - [x] README に `OPENPIPES_DATA` / `data/pipes` / `authRequired` / `GitOps` が残っておらず、Node 22.13、`OPENPIPES_DB`、`OPENPIPES_BASE_URL`、Google ログイン、バックアップ、未確認事項(Node の版)が書いてある。
 - [x] コミット済みで `git status --short` が空。

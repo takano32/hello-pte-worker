@@ -302,13 +302,15 @@ function cookieJar() {
 
 // /auth/google/login → 偽 issuer の /authorize → /auth/google/callback まで進めて、
 // callback の応答を返す(成功なら 302、許可外なら 4xx)。
-async function walkLogin(origin, jar) {
+// returnTo は URL エンコードした状態で渡す(クエリからはデコードされて届く)。
+async function walkLogin(origin, jar, returnTo) {
   const hop = (url) => fetch(url, {
     redirect: 'manual',
     headers: jar.header() ? { cookie: jar.header() } : {},
   }).then((r) => jar.take(r));
 
-  const login = await hop(`${origin}/auth/google/login`);
+  const login = await hop(`${origin}/auth/google/login`
+    + (returnTo ? `?return_to=${returnTo}` : ''));
   assert.equal(login.status, 302, '/auth/google/login が 302 を返さない');
   const authorize = await hop(login.headers.get('location'));
   assert.equal(authorize.status, 302, `偽 issuer の /authorize が 302 を返さない: ${authorize.status}`);
@@ -352,11 +354,18 @@ test('ケース E: 偽 issuer 相手に google モードが一周し、許可リ
         { headers: { cookie: stranger.header() } })).json();
       assert.equal(asStranger.user, null, '許可外がログインできてしまっている');
 
-      // 許可済みは一周でき、セッションでパイプ一覧が読める
+      // 許可済みは一周でき、セッションでパイプ一覧が読める。
+      // return_to に非 ASCII を混ぜてある: クエリからはデコードされて U+3042 として届くので、
+      // Location にそのまま入れると writeHead が投げる。しかもそれは Set-Cookie の後なので、
+      // 修正前は「成功したログインが有効なセッションを持ったまま 500」になっていた(OpenPipes e0fe7cc)。
       const allowed = cookieJar();
       issuer.setUser({ sub: 'a1', email: 'allowed@example.com', email_verified: true, name: '許可' });
-      const ok = await walkLogin(origin, allowed);
+      const ok = await walkLogin(origin, allowed, '%2F%E3%81%82');
       assert.ok(ok.status === 302 || ok.status === 200, `許可済みが弾かれた: ${ok.status}`);
+      if (ok.status === 302) {
+        assert.equal(ok.headers.get('location'), `${origin}/%E3%81%82`,
+          '非 ASCII の return_to がパーセントエンコードされていない');
+      }
       const cfg = await (await fetch(`${origin}/api/config`,
         { headers: { cookie: allowed.header() } })).json();
       assert.equal(cfg.auth, 'google');
