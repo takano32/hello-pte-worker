@@ -411,17 +411,17 @@ git add package.json package-lock.json && git commit -m "Update sorahost-cli"
 
 | 項目 | 仮定 | 外れた場合の対処 |
 | --- | --- | --- |
-| **PteWorker の Node の版** | **22.13.0 以上** | ランチャーが `Node 22.13.0 or newer is required` で止まる。SORAHOST 側で Node の版を選べるか(egg の変数、Docker イメージ)を確認する。選べなければ OpenPipes は動かせない(`node:sqlite` は 22.13 未満では使えない)。**まずこれを確かめる** |
-| DB の置き場 `/home/container/openpipes/` | `.env` と同じく、再デプロイで消えない | 保存したパイプが再デプロイで消える。ファイルマネージャで再デプロイ前後を見比べ、残る場所へ `OPENPIPES_DB` を向ける。どこも残らないなら §5 のバックアップを取って手で戻す運用になる |
+| ~~**PteWorker の Node の版**~~ | **確認済み(2026-09-03)**: 22.13.0 以上。初回デプロイ直後にサイトが OpenPipes のエディタと `/api/config` を返した(`node:sqlite` の import を通っている)。正確な版は `logs` の `[launcher] node v...` で読む | (外れていなかった) |
+| ~~DB の置き場 `/home/container/openpipes/`~~ | **確認済み(2026-09-03)**: `/home/container/.env` も `/home/container/openpipes/openpipes.db` も再デプロイで消えない。エディタで保存したパイプが `npm run deploy` の後も一覧に残った | (外れていなかった。別の場所へ移すなら §5 のバックアップを先に取る) |
 | DB の親ディレクトリの作成 | OpenPipes が起動時に作る | 権限で失敗したら `logs` に出る。ファイルマネージャで作る |
 | `sqlite3` コマンド | PteWorker のコンテナには**無い** | あれば `sqlite3 <db> ".backup backup.db"` でもよい |
 | PteWorker コンソールで node ワンライナーが打てるか | 打てる(**コマンド自体は手元で確認済み**。停止中でも稼働中でも取れる) | 打てなければサーバーを止めて `openpipes.db` / `-wal` / `-shm` をファイルマネージャで落とす |
 | SQLite の WAL とコンテナのファイルシステム | 通常のローカルディスクで WAL が動く | lock に失敗すると `logs` に出る。OpenPipes 側の `journal_mode` の話になるので issue にする |
-| サイト URL | `whoami` で出るサイト URL が固定で、ブラウザで使う URL と同じ(https) | URL が変わると `OPENPIPES_BASE_URL` の照合で保存が 403 になる。`.env` を直して再起動 |
+| サイト URL | `whoami` で出るサイト URL が固定で、ブラウザで使う URL と同じ | URL が変わると `OPENPIPES_BASE_URL` の照合で保存が 403 になる。`.env` を直して再起動。**実機では `http://<IP>:<port>/` で https は無かった(2026-09-03)**。`OPENPIPES_BASE_URL` には末尾のスラッシュを落とした `http://<IP>:<port>` を入れる |
 | ポートの環境変数 | `SERVER_PORT`。`PORT` が来たらそちらを優先して使う | どちらでもなければ `logs` で変数名を確認し、ランチャーで `process.env.PORT` に読み替える |
 | バインド先 | ループバック(`OPENPIPES_HOST=127.0.0.1`)で PteWorker のプロキシから届く | 届かなければ `.env` から `OPENPIPES_HOST` を消す(全インターフェース) |
 | `.env` の置き場所 | アプリの展開先か `/home/container` 直下に置けばランチャーが見つける。HOME は `/home/container` | `logs` に `no .env` と出る。`ENV_FILE` を環境変数で設定できればそれで明示する。HOME が違うなら `lib/env.js` の `findEnvFile` の stopDir を見直す |
 | 作業ディレクトリ | `start` はアップロードしたルートで実行される | ランチャーは自分のファイル位置からパスを解決するので cwd に依存しない。`OPENPIPES_DB` を相対パスで書かないこと |
 | 送信方向のネットワーク | HTTP/HTTPS で外へ出られる | 出られないと上流フィードを取得できず、OpenPipes の意味が無い |
 | メモリ | 数百 MB 級で足りる | 足りなければ PteWorker 側で `NODE_OPTIONS=--max-old-space-size=...` を設定できるか確認する(`.env` に書いても効かない) |
-| Google ログインのリダイレクト URI | サイト URL が https で固定なら登録できる | http のみ、または URL が変わるなら Google ログインは使わず Basic のままにする |
+| Google ログインのリダイレクト URI | サイト URL が https で固定なら登録できる | **実機のサイト URL は http のみ**(上の行)なので、当面は Google ログインを使わず Basic のままにする |

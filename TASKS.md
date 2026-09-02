@@ -930,7 +930,7 @@ push はしない(第 1 期と同じ。リモートは無く、ユーザーの�
 
 **受け入れ基準**: コミット済み。`git status --short` が空。`git show --stat HEAD` に `package-lock.json`、`server.js`、`lib/version.js`、`test/launcher-test.js`、`README.md`、`.env.example`、`sorahost.json`、`.gitignore`、`data/pipes/*.json`(削除)が出る。
 
-### [ ] T17. PteWorker 実機で確認する(**ユーザーが行う**。エージェントは README に書くまで)
+### [x] T17. PteWorker 実機で確認する(**ユーザーが行う**。エージェントは README に書くまで)
 
 1. PteWorker のコンソールで `node --version`(または最初のデプロイ後の `logs`)。**22.13.0 未満なら以降は進めない**。SORAHOST 側で Node の版を選べるか(egg の変数、Docker イメージ)を確かめ、選べなければ OpenPipes を古い Node に戻すか(`node:sqlite` を捨てることになるので事実上不可)、別のホスティングにする。
 2. `.env` を更新して置き直す(`OPENPIPES_DB`、`OPENPIPES_BASE_URL` を追加)。`mkdir -p /home/container/openpipes` は不要(起動時に作られる)。
@@ -953,6 +953,17 @@ push はしない(第 1 期と同じ。リモートは無く、ユーザーの�
 >
 > 残るのは**この作業環境では原理的に確かめられない 3 点**だけ: PteWorker の Node の版、
 > `/home/container/openpipes/` が再デプロイをまたぐか、コンソールで任意コマンドを打てるか。
+>
+> **初回デプロイ(2026-09-03)**: ユーザーから接続先とデプロイトークンを受け取り、`sorahost deploy` を実行して成功
+> (31 ファイル、圧縮後 139 KB)。認証情報は `.sorahost.json`(600、git 管理外)に保存済みで、以後は `npm run deploy` でよい。
+> - 1: **解決**。サイトが OpenPipes のエディタと `/api/config` を返したので Node は 22.13.0 以上(README §10 に反映)。
+> - サイト URL は `http://<IP>:<port>/` で **https は無い**。`OPENPIPES_BASE_URL` は `http://<IP>:<port>`、Google ログインは当面見送り(README §10)。
+> - 初回は**サーバー側に `.env` が無く、`/api/config` が `auth:"none"`**(認証なしで公開)だった。ユーザーが `.env` を置いて
+>   `npm run deploy` した後(2026-09-03、2 回目のデプロイ)、外から確認: `/api/config` が `auth:"basic"`、`/`・`/api/pipes`・`/api/run` は
+>   401 で `WWW-Authenticate: Basic realm="OpenPipes"`、公開フィード `/pipes/demo-headline/run?format=json` は認証なしで 200。
+>   **2 と 3 は解決**(`logs` の `applied:` と `db /home/container/openpipes/openpipes.db` の行はユーザーのコンソールで読む)。
+> - **4 も解決**(2026-09-03、3 回目のデプロイ): ユーザーがエディタでパイプを保存 → `npm run deploy` → 一覧に残った。
+>   `/home/container/openpipes/` は再デプロイをまたぐ(README §10 に反映)。これで T17 の 1〜6 がすべて済み、受け入れ基準を満たした。
 
 ### [x] T18. Google モードを偽 issuer で手元から確かめる(実機不要)
 
